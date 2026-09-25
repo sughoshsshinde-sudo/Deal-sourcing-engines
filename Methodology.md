@@ -272,7 +272,55 @@ Over time, I want to track:
 
 This feedback can then be used to refine which signals deserve greater weight and which discovery channels actually produce useful opportunities.
 
+## 🚀 Getting Started
 
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/sughoshsshinde-sudo/Deal-sourcing-engines.git
+cd Deal-sourcing-engines
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure GitHub access
+
+Create a local `.env` file in the project directory:
+
+```text
+GITHUB_TOKEN=your_github_token_here
+```
+
+The `.env` file is excluded from version control through `.gitignore`.
+
+### 4. Run a discovery engine
+
+For the combined discovery pipeline:
+
+```bash
+python master_founder_scraper.py
+```
+
+Or run an individual discovery engine:
+
+```bash
+python github_scraper.py
+python hf_scraper.py
+```
+
+Generated results are stored locally in the `outputs/` directory and are not committed to the repository.
+
+## 🧪 Current Status
+
+The **Master Founder Discovery Engine** is the current combined version of the project, bringing GitHub and Hugging Face discovery into a standardized research pipeline.
+
+`github_scraper.py` and `hf_scraper.py` can also be run independently for source-specific discovery.
+
+The project remains experimental and is being iterated as I learn which public signals are genuinely useful for identifying interesting early-stage builders.
 
 
 ---
