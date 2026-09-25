@@ -1,3 +1,16 @@
+"""
+GitHub Founder Discovery Engine
+
+Discovers technical builders and repositories relevant to predefined
+investment themes using publicly available GitHub data.
+
+The script is designed as a discovery and prioritization tool for
+early-stage venture sourcing. Results require manual validation and
+should not be interpreted as investment recommendations.
+
+Author: Sughosh Shinde
+"""
+
 import os
 import urllib.parse
 from datetime import datetime
@@ -8,7 +21,7 @@ from dotenv import load_dotenv
 
 
 # ============================================================
-# 1. LOAD GITHUB TOKEN
+# 1. CONFIGURATION
 # ============================================================
 
 load_dotenv()
@@ -17,17 +30,17 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 if not GITHUB_TOKEN:
     print("❌ GitHub token not found.")
-    print("Make sure your .env file contains:")
+    print("Create a .env file in the project directory containing:")
     print("GITHUB_TOKEN=your_token_here")
-    input("\nPress Enter to exit...")
-    raise SystemExit
+    raise SystemExit(1)
 
 
 # ============================================================
-# 2. SEARCH KEYWORDS
+# 2. INVESTMENT-THESIS SEARCH KEYWORDS
 # ============================================================
 
 KEYWORDS = [
+
     # Core RegTech
     "regtech",
     "regulatory-compliance",
@@ -71,35 +84,42 @@ KEYWORDS = [
     "regulatory-reporting",
 ]
 
+
 # ============================================================
-# 3. OUTPUT FOLDER
+# 3. OUTPUT CONFIGURATION
 # ============================================================
 
 def get_output_path():
-    """Return the fixed RegTech scraper folder."""
+    """
+    Create and return a portable output directory.
 
-    output_dir = r"C:\Users\Sughosh\Downloads\RegTech"
+    Generated data is stored inside /outputs rather than in a
+    user-specific local directory.
+    """
 
-    os.makedirs(
-        output_dir,
-        exist_ok=True
+    output_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "outputs",
     )
 
+    os.makedirs(output_dir, exist_ok=True)
+
     return output_dir
+
 
 # ============================================================
 # 4. GITHUB API REQUEST
 # ============================================================
 
 def github_get(url, headers, params=None):
-    """Safely make a GitHub API request."""
+    """Safely make an authenticated GitHub API request."""
 
     try:
         response = requests.get(
             url,
             headers=headers,
             params=params,
-            timeout=20
+            timeout=20,
         )
 
         if response.status_code == 200:
@@ -110,20 +130,23 @@ def github_get(url, headers, params=None):
             f"{response.text[:200]}"
         )
 
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Request failed: {e}")
+    except requests.exceptions.RequestException as exc:
+        print(f"⚠️ Request failed: {exc}")
 
     return None
 
 
 # ============================================================
-# 5. GET FOUNDER PROFILE
+# 5. BUILDER PROFILE ENRICHMENT
 # ============================================================
 
 def get_founder_profile(username, headers):
+    """
+    Retrieve publicly available GitHub profile information
+    for a discovered repository owner.
+    """
 
     url = f"https://api.github.com/users/{username}"
-
     data = github_get(url, headers)
 
     if not data:
@@ -147,10 +170,11 @@ def get_founder_profile(username, headers):
     website = data.get("blog") or ""
     twitter = data.get("twitter_username") or ""
 
-    if twitter:
-        x_profile = f"https://x.com/{twitter}"
-    else:
-        x_profile = ""
+    x_profile = (
+        f"https://x.com/{twitter}"
+        if twitter
+        else ""
+    )
 
     return {
         "Full Name": name,
@@ -167,13 +191,17 @@ def get_founder_profile(username, headers):
 
 
 # ============================================================
-# 6. LINKEDIN SEARCH
+# 6. PROFESSIONAL PROFILE SEARCH
 # ============================================================
 
 def create_linkedin_search(name, company=""):
+    """
+    Generate a LinkedIn search URL for manual profile research.
+
+    This does not scrape LinkedIn.
+    """
 
     search_query = f"{name} {company}".strip()
-
     encoded_query = urllib.parse.quote(search_query)
 
     return (
@@ -183,10 +211,16 @@ def create_linkedin_search(name, company=""):
 
 
 # ============================================================
-# 7. STARTUP / BUILDER SIGNAL
+# 7. BUILDER / STARTUP SIGNAL SCORING
 # ============================================================
 
 def calculate_builder_signal(row):
+    """
+    Assign a heuristic discovery score to a repository/profile.
+
+    The score is intended only to prioritize manual research.
+    It is not an investment-quality score.
+    """
 
     score = 0
     reasons = []
@@ -196,9 +230,14 @@ def calculate_builder_signal(row):
     company = str(row.get("Company", "")).lower()
     topics = str(row.get("Topics", "")).lower()
 
-    combined_text = f"{description} {bio} {company} {topics}"
+    combined_text = (
+        f"{description} {bio} {company} {topics}"
+    )
 
-    # Startup / founder language
+    # --------------------------------------------------------
+    # Founder / builder signals
+    # --------------------------------------------------------
+
     founder_words = [
         "founder",
         "co-founder",
@@ -219,10 +258,15 @@ def calculate_builder_signal(row):
     for word in founder_words:
         if word in combined_text:
             score += 2
-            reasons.append(f"Contains '{word}' signal")
+            reasons.append(
+                f"Contains '{word}' builder signal"
+            )
             break
 
+    # --------------------------------------------------------
     # Thesis relevance
+    # --------------------------------------------------------
+
     thesis_words = [
         "regtech",
         "compliance",
@@ -242,10 +286,15 @@ def calculate_builder_signal(row):
     for word in thesis_words:
         if word in combined_text:
             score += 2
-            reasons.append(f"Relevant thesis signal: '{word}'")
+            reasons.append(
+                f"Relevant thesis signal: '{word}'"
+            )
             break
 
-    # Product language
+    # --------------------------------------------------------
+    # Product / company-building language
+    # --------------------------------------------------------
+
     product_words = [
         "product",
         "platform",
@@ -259,11 +308,19 @@ def calculate_builder_signal(row):
     for word in product_words:
         if word in description:
             score += 1
-            reasons.append(f"Project appears to be a {word}")
+            reasons.append(
+                f"Project appears to be a {word}"
+            )
             break
 
+    # --------------------------------------------------------
     # GitHub traction
-    stars = int(row.get("Stars", 0))
+    # --------------------------------------------------------
+
+    try:
+        stars = int(row.get("Stars", 0))
+    except (TypeError, ValueError):
+        stars = 0
 
     if stars >= 100:
         score += 3
@@ -277,14 +334,20 @@ def calculate_builder_signal(row):
         score += 1
         reasons.append("10+ GitHub stars")
 
-    # Recent activity
-    last_updated = str(row.get("Last Updated", ""))
+    # --------------------------------------------------------
+    # Recent technical activity
+    # --------------------------------------------------------
+
+    last_updated = str(
+        row.get("Last Updated", "")
+    )
 
     if last_updated:
+
         try:
             updated_date = datetime.strptime(
                 last_updated,
-                "%Y-%m-%d"
+                "%Y-%m-%d",
             )
 
             days_old = (
@@ -293,14 +356,22 @@ def calculate_builder_signal(row):
 
             if days_old <= 90:
                 score += 2
-                reasons.append("Active within last 90 days")
+                reasons.append(
+                    "Active within last 90 days"
+                )
 
             elif days_old <= 180:
                 score += 1
-                reasons.append("Active within last 6 months")
+                reasons.append(
+                    "Active within last 6 months"
+                )
 
         except ValueError:
             pass
+
+    # --------------------------------------------------------
+    # Priority classification
+    # --------------------------------------------------------
 
     if score >= 5:
         status = "SCOUT"
@@ -311,17 +382,21 @@ def calculate_builder_signal(row):
     else:
         status = "LOW PRIORITY"
 
-    return score, status, "; ".join(reasons)
+    return (
+        score,
+        status,
+        "; ".join(reasons),
+    )
 
 
 # ============================================================
-# 8. MAIN SCRAPER
+# 8. MAIN DISCOVERY ENGINE
 # ============================================================
 
 def scrape_github_founders():
 
     print("=" * 60)
-    print("🚀 GITHUB FOUNDER SCOUTING SCRAPER")
+    print("🚀 GITHUB FOUNDER DISCOVERY ENGINE")
     print("=" * 60)
     print()
 
@@ -340,11 +415,14 @@ def scrape_github_founders():
     for keyword in KEYWORDS:
 
         print(
-            f"🔍 Searching GitHub for: "
+            f"🔍 Searching GitHub for "
             f"'{keyword}'..."
         )
 
-        url = "https://api.github.com/search/repositories"
+        url = (
+            "https://api.github.com/"
+            "search/repositories"
+        )
 
         params = {
             "q": f"{keyword} pushed:>2025-01-01",
@@ -356,7 +434,7 @@ def scrape_github_founders():
         data = github_get(
             url,
             headers,
-            params=params
+            params=params,
         )
 
         if not data:
@@ -372,45 +450,73 @@ def scrape_github_founders():
 
             owner = item.get("owner", {})
 
-            # Only individual GitHub users
+            # Focus on individual builders rather than
+            # organization-owned repositories.
             if owner.get("type") != "User":
                 continue
 
-            raw_items.append({
-                "Repo URL": item.get("html_url", ""),
-                "Repository Name": item.get("name", ""),
-                "Founder Handle": owner.get("login", ""),
-                "Keyword Trigger": keyword,
-                "Description": (
-                    item.get("description")
-                    or "No description provided"
-                ),
-                "Stars": item.get("stargazers_count", 0),
-                "Forks": item.get("forks_count", 0),
-                "Language": (
-                     item.get("language")
-                    or "N/A"
-                ),
-                "Topics": ", ".join(
-                    item.get("topics", [])
-                ),
-                "Created At": (
-                    item.get("created_at", "")[:10]
-                ),
-                "Last Updated": (
-                    item.get("updated_at", "")[:10]
-                ),
-            })
+            raw_items.append(
+                {
+                    "Repo URL":
+                        item.get("html_url", ""),
+
+                    "Repository Name":
+                        item.get("name", ""),
+
+                    "Founder Handle":
+                        owner.get("login", ""),
+
+                    "Keyword Trigger":
+                        keyword,
+
+                    "Description":
+                        item.get("description")
+                        or "No description provided",
+
+                    "Stars":
+                        item.get(
+                            "stargazers_count",
+                            0,
+                        ),
+
+                    "Forks":
+                        item.get(
+                            "forks_count",
+                            0,
+                        ),
+
+                    "Language":
+                        item.get("language")
+                        or "N/A",
+
+                    "Topics":
+                        ", ".join(
+                            item.get(
+                                "topics",
+                                [],
+                            )
+                        ),
+
+                    "Created At":
+                        item.get(
+                            "created_at",
+                            "",
+                        )[:10],
+
+                    "Last Updated":
+                        item.get(
+                            "updated_at",
+                            "",
+                        )[:10],
+                }
+            )
 
     # --------------------------------------------------------
     # CHECK RESULTS
     # --------------------------------------------------------
 
     if not raw_items:
-
         print("\n❌ No repositories found.")
-
-        input("\nPress Enter to exit...")
         return
 
     # --------------------------------------------------------
@@ -430,7 +536,7 @@ def scrape_github_founders():
     )
 
     # --------------------------------------------------------
-    # GET UNIQUE FOUNDERS
+    # IDENTIFY UNIQUE BUILDERS
     # --------------------------------------------------------
 
     founders = (
@@ -448,14 +554,16 @@ def scrape_github_founders():
     print()
 
     # --------------------------------------------------------
-    # ENRICH FOUNDERS
+    # ENRICH BUILDER PROFILES
     # --------------------------------------------------------
 
     profile_cache = {}
-
     enriched_rows = []
 
-    for number, handle in enumerate(founders, start=1):
+    for number, handle in enumerate(
+        founders,
+        start=1,
+    ):
 
         print(
             f"👤 [{number}/{len(founders)}] "
@@ -467,21 +575,22 @@ def scrape_github_founders():
             profile_cache[handle] = (
                 get_founder_profile(
                     handle,
-                    headers
+                    headers,
                 )
             )
 
         profile = profile_cache[handle]
 
         founder_repos = df_repos[
-            df_repos["Founder Handle"] == handle
+            df_repos["Founder Handle"]
+            == handle
         ]
 
         for _, repo in founder_repos.iterrows():
 
             linkedin = create_linkedin_search(
                 profile["Full Name"],
-                profile["Company"]
+                profile["Company"],
             )
 
             row = {
@@ -518,7 +627,9 @@ def scrape_github_founders():
                     profile["Followers"],
 
                 "Public Repositories":
-                    profile["Public Repositories"],
+                    profile[
+                        "Public Repositories"
+                    ],
 
                 # PROJECT
                 "Repository Name":
@@ -552,7 +663,6 @@ def scrape_github_founders():
                     repo["Last Updated"],
             }
 
-            # Calculate scouting signal
             score, status, reasons = (
                 calculate_builder_signal(row)
             )
@@ -564,37 +674,44 @@ def scrape_github_founders():
             enriched_rows.append(row)
 
     # --------------------------------------------------------
-    # CREATE FINAL DATAFRAME
+    # CREATE FINAL DATASET
     # --------------------------------------------------------
+
+    if not enriched_rows:
+        print(
+            "\n❌ No builder profiles "
+            "were successfully enriched."
+        )
+        return
 
     df_final = pd.DataFrame(enriched_rows)
 
-    # Sort strongest candidates first
+    # Prioritize strongest discovery candidates.
     df_final = df_final.sort_values(
         by=[
             "Builder Score",
             "Stars",
-            "Followers"
+            "Followers",
         ],
-        ascending=False
+        ascending=False,
     )
 
     # --------------------------------------------------------
-    # SAVE CSV
+    # SAVE RESULTS
     # --------------------------------------------------------
 
-    target_dir = target_dir = get_output_path()
+    target_dir = get_output_path()
 
     filename = os.path.join(
         target_dir,
         "github_founder_scouting_"
-        f"{datetime.now().strftime('%Y%m%d')}.csv"
+        f"{datetime.now().strftime('%Y%m%d')}.csv",
     )
 
     df_final.to_csv(
         filename,
         index=False,
-        encoding="utf-8-sig"
+        encoding="utf-8-sig",
     )
 
     # --------------------------------------------------------
@@ -602,16 +719,18 @@ def scrape_github_founders():
     # --------------------------------------------------------
 
     scout_count = (
-        df_final["Scout Status"] == "SCOUT"
+        df_final["Scout Status"]
+        == "SCOUT"
     ).sum()
 
     monitor_count = (
-        df_final["Scout Status"] == "MONITOR"
+        df_final["Scout Status"]
+        == "MONITOR"
     ).sum()
 
     print()
     print("=" * 60)
-    print("✅ SCRAPING COMPLETE")
+    print("✅ DISCOVERY COMPLETE")
     print("=" * 60)
 
     print(
@@ -635,14 +754,9 @@ def scrape_github_founders():
     )
 
     print()
-    print(
-        f"📁 File saved to:"
-    )
-
+    print("📁 Results saved to:")
     print(filename)
-
     print()
-    input("Press Enter to exit...")
 
 
 # ============================================================
