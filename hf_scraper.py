@@ -1,25 +1,39 @@
-import requests
-import pandas as pd
-from datetime import datetime
+"""
+Hugging Face Founder Discovery Engine
+
+Discovers technically active builders and organizations working on
+AI products relevant to predefined early-stage investment themes.
+
+Current areas of interest include RegTech, ComplianceTech, Governance,
+Risk, Enterprise AI and related infrastructure.
+
+The engine is designed for founder discovery and research prioritization.
+Scores are heuristic signals and should not be interpreted as investment
+recommendations.
+
+Author: Sughosh Shinde
+"""
+
 import os
-import urllib.parse
 import time
+import urllib.parse
+from datetime import datetime
+
+import pandas as pd
+import requests
+
 
 # ============================================================
-# HUGGING FACE FOUNDER DISCOVERY SCRAPER - VERSION 2
-# Purpose:
-# Find technically active people / organisations building
-# AI products relevant to RegTech, ComplianceTech,
-# GovernanceTech and B2B / Enterprise SaaS.
-#
-# No paid API is required.
+# 1. CONFIGURATION
 # ============================================================
 
-# Broader thesis keywords.
-# We deliberately use related terms because a founder may not
-# describe their project as "RegTech".
+# Broader thesis keywords are intentionally used because builders
+# may be working on relevant problems without describing themselves
+# explicitly as "RegTech" or "ComplianceTech".
+
 SEARCH_KEYWORDS = [
-    # Regulatory / compliance
+
+    # Regulatory / Compliance
     "regtech",
     "regulatory technology",
     "regulatory compliance",
@@ -38,7 +52,7 @@ SEARCH_KEYWORDS = [
     "transaction monitoring",
     "fraud detection",
 
-    # Governance / risk / audit
+    # Governance / Risk / Audit
     "governance",
     "ai governance",
     "model governance",
@@ -51,7 +65,7 @@ SEARCH_KEYWORDS = [
     "internal controls",
     "third party risk",
 
-    # Legal / privacy
+    # Legal / Privacy
     "legal ai",
     "legaltech",
     "contract ai",
@@ -61,7 +75,7 @@ SEARCH_KEYWORDS = [
     "privacy compliance",
     "legal compliance",
 
-    # Enterprise AI / workflow
+    # Enterprise AI / Workflow
     "enterprise ai",
     "enterprise agent",
     "ai agent",
@@ -84,28 +98,63 @@ SEARCH_KEYWORDS = [
 ]
 
 
+# ============================================================
+# 2. OUTPUT CONFIGURATION
+# ============================================================
+
 def get_output_path():
-    """Return the fixed RegTech scraper folder."""
-    output_dir = r"C:\Users\Sughosh\Downloads\RegTech"
+    """
+    Create and return a portable output directory.
+
+    Generated datasets are stored inside /outputs so they remain
+    separate from the source code and can be excluded from Git.
+    """
+
+    output_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "outputs",
+    )
+
     os.makedirs(output_dir, exist_ok=True)
+
     return output_dir
 
 
+# ============================================================
+# 3. API REQUEST HANDLING
+# ============================================================
+
 def safe_get_json(url, timeout=20):
-    """Make a web request without crashing the whole scraper."""
+    """
+    Make a request to a public endpoint without allowing an
+    individual request failure to terminate the entire discovery run.
+    """
+
     try:
         response = requests.get(
             url,
             timeout=timeout,
-            headers={"User-Agent": "Founder-Discovery-Scraper/2.0"}
+            headers={
+                "User-Agent":
+                    "Founder-Discovery-Engine/2.0"
+            },
         )
+
         response.raise_for_status()
+
         return response.json()
-    except Exception as e:
+
+    except requests.exceptions.RequestException as exc:
+
         print(f"   ⚠️ Request failed: {url}")
-        print(f"      Reason: {e}")
+        print(f"      Reason: {exc}")
+
         return []
 
+
+# ============================================================
+# 4. THESIS SCORING
+# ============================================================
 
 def calculate_thesis_score(
     keyword,
@@ -113,13 +162,15 @@ def calculate_thesis_score(
     project_type="",
     likes=0,
     downloads=0,
-    author=""
+    author="",
 ):
     """
-    Preliminary founder-scouting score.
+    Calculate a preliminary discovery score.
 
-    This score is NOT an investment recommendation.
-    It helps prioritize people/projects for manual research.
+    The score is designed to prioritize projects for manual
+    founder and company research.
+
+    It is not intended to predict investment quality.
     """
 
     text = (
@@ -133,15 +184,17 @@ def calculate_thesis_score(
     matched = []
 
     # --------------------------------------------------------
-    # 1. DIRECT THESIS SIGNALS
+    # 4.1 DIRECT THESIS SIGNALS
     # --------------------------------------------------------
 
     strong_terms = {
+
         "regtech": 20,
         "regulatory compliance": 25,
         "compliance": 20,
         "compliance ai": 30,
         "compliance agent": 30,
+
         "aml": 30,
         "anti-money laundering": 30,
         "kyc": 30,
@@ -149,18 +202,24 @@ def calculate_thesis_score(
         "sanctions": 25,
         "financial crime": 30,
         "transaction monitoring": 30,
+
         "regulatory reporting": 30,
         "regulatory intelligence": 30,
+
         "ai governance": 25,
         "model governance": 25,
         "model risk": 25,
         "grc": 25,
+
         "internal audit": 20,
         "audit ai": 25,
+
         "legal ai": 20,
         "legaltech": 20,
+
         "privacy compliance": 25,
         "identity verification": 25,
+
         "policy engine": 20,
     }
 
@@ -169,11 +228,10 @@ def calculate_thesis_score(
         if term in text:
 
             score += points
-
             matched.append(term)
 
     # --------------------------------------------------------
-    # 2. AI / AGENT SIGNAL
+    # 4.2 AI / AGENT SIGNALS
     # --------------------------------------------------------
 
     ai_terms = [
@@ -187,7 +245,8 @@ def calculate_thesis_score(
     ]
 
     ai_matches = [
-        term for term in ai_terms
+        term
+        for term in ai_terms
         if term in text
     ]
 
@@ -200,7 +259,7 @@ def calculate_thesis_score(
         )
 
     # --------------------------------------------------------
-    # 3. ENTERPRISE SIGNAL
+    # 4.3 ENTERPRISE SIGNALS
     # --------------------------------------------------------
 
     enterprise_terms = [
@@ -229,13 +288,13 @@ def calculate_thesis_score(
         )
 
     # --------------------------------------------------------
-    # 4. PROJECT TYPE
+    # 4.4 PRODUCT / DEMO SIGNAL
     # --------------------------------------------------------
 
     if project_type == "Space / Demo":
 
-        # A working demo/application is a stronger
-        # startup-building signal than a standalone model.
+        # A deployed application or demo can be a stronger
+        # company-building signal than a standalone model.
 
         score += 10
 
@@ -244,16 +303,18 @@ def calculate_thesis_score(
         )
 
     # --------------------------------------------------------
-    # 5. GITHUB-LIKE TRACTION SIGNALS
+    # 4.5 COMMUNITY TRACTION
     # --------------------------------------------------------
 
     try:
         likes = int(likes or 0)
+
     except (ValueError, TypeError):
         likes = 0
 
     try:
         downloads = int(downloads or 0)
+
     except (ValueError, TypeError):
         downloads = 0
 
@@ -273,7 +334,7 @@ def calculate_thesis_score(
         matched.append("10+ HF likes")
 
     # --------------------------------------------------------
-    # 6. USAGE / DOWNLOAD SIGNAL
+    # 4.6 USAGE / DOWNLOAD SIGNAL
     # --------------------------------------------------------
 
     if downloads >= 100000:
@@ -292,13 +353,13 @@ def calculate_thesis_score(
         matched.append("1k+ downloads")
 
     # --------------------------------------------------------
-    # 7. SCORE CAP
+    # 4.7 SCORE CAP
     # --------------------------------------------------------
 
     score = min(score, 100)
 
     # --------------------------------------------------------
-    # 8. PRIORITY
+    # 4.8 PRIORITY CLASSIFICATION
     # --------------------------------------------------------
 
     if score >= 60:
@@ -316,8 +377,15 @@ def calculate_thesis_score(
     return (
         score,
         priority,
-        ", ".join(dict.fromkeys(matched))
+        ", ".join(
+            dict.fromkeys(matched)
+        ),
     )
+
+
+# ============================================================
+# 5. STANDARDIZE DISCOVERY RECORD
+# ============================================================
 
 def build_lead(
     author,
@@ -328,19 +396,32 @@ def build_lead(
     downloads=None,
     last_modified=None,
 ):
-    """Create one standard founder-discovery record."""
+    """
+    Convert a discovered Hugging Face project into a standardized
+    founder / organization research record.
+    """
 
-    score, priority, matched_terms = calculate_thesis_score(
-    keyword=keyword,
-    project_name=repo_name,
-    project_type=project_type,
-    likes=likes,
-    downloads=downloads,
-    author=author,
-)
+    score, priority, matched_terms = (
+        calculate_thesis_score(
+            keyword=keyword,
+            project_name=repo_name,
+            project_type=project_type,
+            likes=likes,
+            downloads=downloads,
+            author=author,
+        )
+    )
 
-    # Basic creator classification.
-    # This is a preliminary signal based on the Hugging Face handle.
+    # --------------------------------------------------------
+    # Preliminary creator classification
+    # --------------------------------------------------------
+    #
+    # Hugging Face handles do not always reveal whether an
+    # account represents an individual or an organization.
+    #
+    # This is therefore only a discovery heuristic and should
+    # be manually validated during research.
+
     organization_terms = [
         "official",
         "labs",
@@ -362,179 +443,390 @@ def build_lead(
         term in author_lower
         for term in organization_terms
     ):
+
         creator_type = "Potential Organization"
+
     else:
+
         creator_type = "Potential Individual"
 
+    # --------------------------------------------------------
+    # Research links
+    # --------------------------------------------------------
+
     encoded_author = urllib.parse.quote(author)
-    linkedin_query = urllib.parse.quote(f'"{author}"')
-    x_query = urllib.parse.quote(f'"{author}"')
+
+    encoded_repo = urllib.parse.quote(repo_name)
+
+    linkedin_query = urllib.parse.quote(
+        f'"{author}"'
+    )
+
+    x_query = urllib.parse.quote(
+        f'"{author}"'
+    )
 
     return {
-        "Founder / Org Handle": author,
-        "Creator Type": creator_type,
-        "Project Type": project_type,
-        "Project Name": repo_name,
-        "Keyword Trigger": keyword,
 
-        "Thesis Score": score,
-        "Initial Priority": priority,
-        "Matched Thesis Signals": matched_terms,
+        # CREATOR
+        "Founder / Org Handle":
+            author,
 
-        "HF Likes": likes if likes is not None else "",
-        "HF Downloads": downloads if downloads is not None else "",
-        "HF Last Modified": last_modified if last_modified else "",
+        "Creator Type":
+            creator_type,
 
-        "Hugging Face Profile": f"https://huggingface.co/{encoded_author}",
-        "Project URL": f"https://huggingface.co/{encoded_author}/{urllib.parse.quote(repo_name)}",
+        # PROJECT
+        "Project Type":
+            project_type,
 
-        # These are search links, NOT claims that the person owns
-        # these accounts.
-        "LinkedIn Quick Search": (
-            f"https://www.linkedin.com/search/results/all/?keywords={linkedin_query}"
-        ),
-        "X Quick Search": (
-            f"https://x.com/search?q={x_query}"
-        ),
+        "Project Name":
+            repo_name,
 
-        "Source": "Hugging Face",
-        "First Seen": datetime.now().strftime("%Y-%m-%d"),
+        "Keyword Trigger":
+            keyword,
+
+        # DISCOVERY SCORING
+        "Thesis Score":
+            score,
+
+        "Initial Priority":
+            priority,
+
+        "Matched Thesis Signals":
+            matched_terms,
+
+        # PLATFORM SIGNALS
+        "HF Likes":
+            likes if likes is not None else "",
+
+        "HF Downloads":
+            downloads if downloads is not None else "",
+
+        "HF Last Modified":
+            last_modified if last_modified else "",
+
+        # RESEARCH LINKS
+        "Hugging Face Profile":
+            f"https://huggingface.co/{encoded_author}",
+
+        "Project URL":
+            (
+                "https://huggingface.co/"
+                f"{encoded_author}/{encoded_repo}"
+            ),
+
+        # These URLs generate manual searches.
+        # They do not claim that the resulting account belongs
+        # to the discovered Hugging Face creator.
+
+        "LinkedIn Quick Search":
+            (
+                "https://www.linkedin.com/"
+                "search/results/all/"
+                f"?keywords={linkedin_query}"
+            ),
+
+        "X Quick Search":
+            (
+                "https://x.com/search"
+                f"?q={x_query}"
+            ),
+
+        # METADATA
+        "Source":
+            "Hugging Face",
+
+        "First Seen":
+            datetime.now().strftime(
+                "%Y-%m-%d"
+            ),
     }
 
 
-def scrape_huggingface():
-    print("🚀 Starting Hugging Face Founder Discovery Scraper v2...\n")
-    print(f"🔎 Searching {len(SEARCH_KEYWORDS)} thesis keywords.\n")
+# ============================================================
+# 6. DISCOVERY ENGINE
+# ============================================================
 
-    # Key = author + project so we don't accidentally lose
-    # multiple relevant projects from the same builder.
+def scrape_huggingface():
+
+    print("=" * 60)
+    print("🚀 HUGGING FACE FOUNDER DISCOVERY ENGINE")
+    print("=" * 60)
+
+    print(
+        f"\n🔎 Searching "
+        f"{len(SEARCH_KEYWORDS)} "
+        "thesis keywords.\n"
+    )
+
+    # Key = creator + project + project type.
+    #
+    # This allows one creator to have multiple relevant
+    # projects while preventing duplicate records caused
+    # by overlapping keyword searches.
+
     found_projects = {}
 
-    for number, keyword in enumerate(SEARCH_KEYWORDS, start=1):
-        print(f"[{number}/{len(SEARCH_KEYWORDS)}] 🔍 {keyword}")
+    for number, keyword in enumerate(
+        SEARCH_KEYWORDS,
+        start=1,
+    ):
+
+        print(
+            f"[{number}/"
+            f"{len(SEARCH_KEYWORDS)}] "
+            f"🔍 {keyword}"
+        )
 
         # ----------------------------------------------------
         # MODELS
         # ----------------------------------------------------
+
         model_url = (
             "https://huggingface.co/api/models"
-            f"?search={urllib.parse.quote(keyword)}&limit=30"
+            f"?search="
+            f"{urllib.parse.quote(keyword)}"
+            "&limit=30"
         )
 
-        models = safe_get_json(model_url)
+        models = safe_get_json(
+            model_url
+        )
 
         if isinstance(models, list):
+
             for model in models:
-                item_id = model.get("id", "")
+
+                item_id = model.get(
+                    "id",
+                    "",
+                )
 
                 if "/" not in item_id:
                     continue
 
-                author, repo = item_id.split("/", 1)
+                author, repo = (
+                    item_id.split("/", 1)
+                )
 
-                key = f"{author.lower()}::{repo.lower()}::model"
+                key = (
+                    f"{author.lower()}::"
+                    f"{repo.lower()}::model"
+                )
 
                 if key not in found_projects:
-                    found_projects[key] = build_lead(
-                        author=author,
-                        project_type="Model",
-                        repo_name=repo,
-                        keyword=keyword,
-                        likes=model.get("likes"),
-                        downloads=model.get("downloads"),
-                        last_modified=model.get("lastModified"),
+
+                    found_projects[key] = (
+                        build_lead(
+                            author=author,
+                            project_type="Model",
+                            repo_name=repo,
+                            keyword=keyword,
+                            likes=model.get(
+                                "likes"
+                            ),
+                            downloads=model.get(
+                                "downloads"
+                            ),
+                            last_modified=model.get(
+                                "lastModified"
+                            ),
+                        )
                     )
 
         # ----------------------------------------------------
-        # SPACES
+        # SPACES / DEMOS
         # ----------------------------------------------------
+
         space_url = (
             "https://huggingface.co/api/spaces"
-            f"?search={urllib.parse.quote(keyword)}&limit=30"
+            f"?search="
+            f"{urllib.parse.quote(keyword)}"
+            "&limit=30"
         )
 
-        spaces = safe_get_json(space_url)
+        spaces = safe_get_json(
+            space_url
+        )
 
         if isinstance(spaces, list):
+
             for space in spaces:
-                item_id = space.get("id", "")
+
+                item_id = space.get(
+                    "id",
+                    "",
+                )
 
                 if "/" not in item_id:
                     continue
 
-                author, repo = item_id.split("/", 1)
+                author, repo = (
+                    item_id.split("/", 1)
+                )
 
-                key = f"{author.lower()}::{repo.lower()}::space"
+                key = (
+                    f"{author.lower()}::"
+                    f"{repo.lower()}::space"
+                )
 
                 if key not in found_projects:
-                    found_projects[key] = build_lead(
-                        author=author,
-                        project_type="Space / Demo",
-                        repo_name=repo,
-                        keyword=keyword,
-                        likes=space.get("likes"),
-                        last_modified=space.get("lastModified"),
+
+                    found_projects[key] = (
+                        build_lead(
+                            author=author,
+                            project_type=(
+                                "Space / Demo"
+                            ),
+                            repo_name=repo,
+                            keyword=keyword,
+                            likes=space.get(
+                                "likes"
+                            ),
+                            last_modified=space.get(
+                                "lastModified"
+                            ),
+                        )
                     )
 
-        # Small pause to be polite to the public API.
+        # Small delay to avoid unnecessarily aggressive
+        # requests to the public Hugging Face endpoints.
+
         time.sleep(0.25)
 
-    # --------------------------------------------------------
-    # EXPORT
-    # --------------------------------------------------------
-    results = list(found_projects.values())
+    # ========================================================
+    # 7. BUILD DATASET
+    # ========================================================
+
+    results = list(
+        found_projects.values()
+    )
 
     if not results:
-        print("\n❌ No matching results found.")
+
+        print(
+            "\n❌ No matching results found."
+        )
+
         return
 
     df = pd.DataFrame(results)
 
-    # Count how many relevant HF projects each creator has.
-    project_counts = df.groupby("Founder / Org Handle")["Project Name"].transform("nunique")
+    # Count the number of unique thesis-relevant projects
+    # associated with each discovered creator.
+
+    project_counts = (
+        df.groupby(
+            "Founder / Org Handle"
+        )["Project Name"]
+        .transform("nunique")
+    )
+
     df["Project Count"] = project_counts
 
-    # Highest-value records first.
+    # Highest-priority discovery records appear first.
+
     df = df.sort_values(
-        by=["Thesis Score", "HF Likes", "HF Downloads"],
-        ascending=[False, False, False],
+        by=[
+            "Thesis Score",
+            "HF Likes",
+            "HF Downloads",
+        ],
+        ascending=[
+            False,
+            False,
+            False,
+        ],
         na_position="last",
     )
 
+    # ========================================================
+    # 8. EXPORT
+    # ========================================================
+
     target_dir = get_output_path()
 
-    filename = os.path.join(
-        target_dir,
-        f"hf_founder_discovery_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M"
     )
 
-    df.to_csv(filename, index=False, encoding="utf-8-sig")
+    master_filename = os.path.join(
+        target_dir,
+        f"hf_founder_discovery_{timestamp}.csv",
+    )
 
-    # Also create a smaller "Scout Queue" containing HIGH priority.
-    scout_df = df[df["Initial Priority"] == "HIGH"].copy()
+    df.to_csv(
+        master_filename,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    # --------------------------------------------------------
+    # HIGH-PRIORITY SCOUT QUEUE
+    # --------------------------------------------------------
+
+    scout_df = df[
+        df["Initial Priority"] == "HIGH"
+    ].copy()
 
     scout_filename = os.path.join(
         target_dir,
-        f"hf_scout_queue_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+        f"hf_scout_queue_{timestamp}.csv",
     )
 
     scout_df.to_csv(
         scout_filename,
         index=False,
-        encoding="utf-8-sig"
+        encoding="utf-8-sig",
     )
 
-    print("\n" + "=" * 60)
-    print("✅ SCRAPING COMPLETE")
+    # ========================================================
+    # 9. SUMMARY
+    # ========================================================
+
+    unique_creators = (
+        df["Founder / Org Handle"]
+        .nunique()
+    )
+
+    print()
     print("=" * 60)
-    print(f"Projects found: {len(df)}")
-    print(f"High-priority records: {len(scout_df)}")
-    print(f"\n📁 Master file:")
-    print(filename)
-    print(f"\n🔥 Scout Queue:")
-    print(scout_filename)
+    print("✅ DISCOVERY COMPLETE")
     print("=" * 60)
 
+    print(
+        f"Projects found: "
+        f"{len(df)}"
+    )
+
+    print(
+        f"Unique creators: "
+        f"{unique_creators}"
+    )
+
+    print(
+        f"High-priority records: "
+        f"{len(scout_df)}"
+    )
+
+    print(
+        "\n📁 Master discovery file:"
+    )
+
+    print(master_filename)
+
+    print(
+        "\n🔥 High-priority scout queue:"
+    )
+
+    print(scout_filename)
+
+    print("=" * 60)
+
+
+# ============================================================
+# 10. RUN
+# ============================================================
 
 if __name__ == "__main__":
     scrape_huggingface()
